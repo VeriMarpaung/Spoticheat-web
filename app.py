@@ -4,12 +4,15 @@ from spotify_handler import SpotifyHandler
 from spotipy.oauth2 import SpotifyOAuth
 import threading
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # Konfigurasi utama
-CLIENT_ID = "7d145b84e88c40e680bfe54a2f47d651"
-CLIENT_SECRET = "25d72c96fb0f4013a2e3d70e9add7c28"
+CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 # REDIRECT_URI = "https://verim.pythonanywhere.com/callback"
-REDIRECT_URI = "http://127.0.0.1:5000/callback"
+REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
 SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 
 app = Flask(__name__)

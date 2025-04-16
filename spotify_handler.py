@@ -7,13 +7,15 @@ import sys
 import tempfile
 import shutil
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 
 class SpotifyHandler:
     def __init__(self, token_info=None):
-        self.client_id = "7d145b84e88c40e680bfe54a2f47d651"
-        self.client_secret = "25d72c96fb0f4013a2e3d70e9add7c28"
-        self.redirect_uri = "http://127.0.0.1:5000/callback"
+        self.client_id = os.getenv("SPOTIFY_CLIENT_ID")
+        self.client_secret = os.getenv("SPOTIFY_CLIENT_SECRET")
+        self.redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI")
         # self.redirect_uri = "https://verim.pythonanywhere.com/callback"
         # REDIRECT_URI = "http://localhost:8888/callback"
         self.scope = "user-library-read playlist-read-private playlist-read-collaborative"

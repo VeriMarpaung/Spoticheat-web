@@ -9,10 +9,10 @@ load_dotenv()
 
 
 # Konfigurasi utama
-CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
+CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
 # REDIRECT_URI = "https://verim.pythonanywhere.com/callback"
-REDIRECT_URI = os.getenv("SPOTIFY_REDIRECT_URI")
+REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 
 app = Flask(__name__)

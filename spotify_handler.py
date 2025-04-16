@@ -99,8 +99,25 @@ class SpotifyHandler:
 
         # ZIP file all downloaded songs
         zip_path = Path(temp_dir).parent / "songs_downloaded.zip"
-        shutil.make_archive(str(zip_path).replace(".zip", ""), 'zip', temp_dir)
+        # Debug: Print isi folder setelah download
+        print("[DEBUG] Isi folder hasil download:", os.listdir(temp_dir))
 
-        return str(zip_path), downloaded
+        if not os.listdir(temp_dir):
+            print("[WARNING] Folder kosong. Kemungkinan download gagal.")
+            return "", downloaded  # ZIP tidak dibuat karena kosong
+
+        # Buat ZIP
+        zip_base_path = str(zip_path).replace(".zip", "")
+        shutil.make_archive(zip_base_path, 'zip', temp_dir)
+
+        # Flush write
+        zip_file_path = f"{zip_base_path}.zip"
+        if os.path.exists(zip_file_path):
+            print(f"[DEBUG] ZIP berhasil dibuat di: {zip_file_path}")
+        else:
+            print("[ERROR] ZIP tidak ditemukan setelah dibuat.")
+
+        return zip_file_path, downloaded
+
 
 

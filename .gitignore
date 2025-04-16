@@ -1,0 +1,17 @@
+# Environment
+__pycache__/
+*.pyc
+spoticheat_web-env/
+.env
+
+# Cache dan data
+.cache/
+.cache-web/
+*.db
+*.sqlite3
+
+# VSCode
+.vscode/
+
+# Mac & Linux junk
+.DS_Store

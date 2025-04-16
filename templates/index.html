@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Spoticheat Web</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Spoticheat 🎧</h1>
+
+    <div id="user-section">
+      <button id="login-btn">Login to Spotify</button>
+      <span id="username" class="hidden"></span>
+      <button id="logout-btn" class="hidden">Logout</button>
+    </div>
+
+    <select id="playlist-select" disabled></select>
+    <div id="track-list"></div>
+
+    <button id="download-selected" disabled>Download Selected</button>
+    <button id="download-all" disabled>Download All</button>
+
+    <div id="spinner" class="hidden">⏳ Downloading...</div>
+    <p id="status-msg"></p>
+    <pre id="result-box"></pre>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Cek status login
+      fetch('/user_info')
+        .then(res => res.json())
+        .then(data => {
+          if (data.logged_in) {
+            document.getElementById('login-btn').classList.add('hidden');
+            document.getElementById('logout-btn').classList.remove('hidden');
+            const usernameEl = document.getElementById('username');
+            usernameEl.textContent = `🎶 Logged in as ${data.username}`;
+            usernameEl.classList.remove('hidden');
+          }
+        });
+
+      // Login button
+      document.getElementById("login-btn").onclick = function () {
+        fetch('/login_url')
+          .then(res => res.json())
+          .then(data => {
+            window.location.href = data.url;
+          });
+      };
+
+      // Logout button
+      document.getElementById("logout-btn").onclick = function () {
+        window.location.href = '/logout';
+      };
+    });
+  </script>
+
+  <script src="/static/js/script.js"></script>
+</body>
+</html>

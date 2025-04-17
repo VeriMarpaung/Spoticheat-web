@@ -8,8 +8,6 @@ import tempfile
 import shutil
 from pathlib import Path
 from dotenv import load_dotenv
-from spotipy.exceptions import SpotifyOauthError  # tambahkan ini di bagian import
-
 load_dotenv()
 
 
@@ -18,6 +16,8 @@ class SpotifyHandler:
         self.client_id = os.getenv("SPOTIPY_CLIENT_ID")
         self.client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
         self.redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
+        # self.redirect_uri = "https://verim.pythonanywhere.com/callback"
+        # REDIRECT_URI = "http://localhost:8888/callback"
         self.scope = "user-library-read playlist-read-private playlist-read-collaborative"
         self.selected_playlist = None
         self.tracks = []
@@ -32,22 +32,9 @@ class SpotifyHandler:
             open_browser=False
         )
 
-        # Safe get token / handle invalid_grant
-        try:
-            if token_info:
-                self.sp = Spotify(auth=token_info['access_token'])
-            else:
-                token_info = self.auth_manager.get_cached_token()
-                if token_info:
-                    self.sp = Spotify(auth=token_info['access_token'])
-                else:
-                    self.sp = None
-        except SpotifyOauthError as e:
-            print(f"[ERROR] Spotify OAuth error: {e}")
-            cache_path = ".cache-web"
-            if os.path.exists(cache_path):
-                os.remove(cache_path)
-                print("[INFO] Cache dihapus karena token error.")
+        if token_info:
+            self.sp = Spotify(auth=token_info['access_token'])
+        else:
             self.sp = None
 
     def get_auth_url(self):

@@ -6,7 +6,6 @@ import threading
 import os
 from dotenv import load_dotenv
 load_dotenv()
-from spotipy.exceptions import SpotifyOauthError  # tambahkan di bagian atas jika belum
 
 
 # Konfigurasi utama
@@ -46,32 +45,10 @@ def login_url():
     return jsonify({'url': auth_manager.get_authorize_url()})
 
 
-# @app.route('/callback')
-# def callback():
-#     code = request.args.get('code')
-#     if code:
-#         auth_manager = SpotifyOAuth(
-#             client_id=CLIENT_ID,
-#             client_secret=CLIENT_SECRET,
-#             redirect_uri=REDIRECT_URI,
-#             scope=SCOPE,
-#             cache_path=".cache-web"
-#         )
-#         token_info = auth_manager.get_access_token(code, as_dict=True)
-#         session['token_info'] = token_info
-#         return redirect('/dashboard')
-#     else:
-#         return "Authorization failed.", 400
-
-from spotipy.exceptions import SpotifyOauthError  # tambahkan di bagian atas jika belum
-
 @app.route('/callback')
 def callback():
     code = request.args.get('code')
-    if not code:
-        return "Authorization failed.", 400
-
-    try:
+    if code:
         auth_manager = SpotifyOAuth(
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
@@ -82,14 +59,8 @@ def callback():
         token_info = auth_manager.get_access_token(code, as_dict=True)
         session['token_info'] = token_info
         return redirect('/dashboard')
-
-    except SpotifyOauthError as e:
-        print(f"[ERROR] SpotifyOauthError: {e}")
-        # hapus cache token yang rusak
-        if os.path.exists(".cache-web"):
-            os.remove(".cache-web")
-            print("[INFO] Cache token dihapus karena error.")
-        return redirect('/login_url')
+    else:
+        return "Authorization failed.", 400
 
 
 @app.route('/dashboard')

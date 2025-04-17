@@ -6,6 +6,8 @@ import threading
 import os
 from dotenv import load_dotenv
 load_dotenv()
+import logging
+
 
 
 # Konfigurasi utama
@@ -17,6 +19,12 @@ SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 
 app = Flask(__name__)
 app.secret_key = CLIENT_SECRET  # Untuk session
+# Logging untuk debug Railway
+logging.basicConfig(level=logging.DEBUG)
+print("🚀 Flask App is starting...")
+print(f"🔧 SPOTIPY_CLIENT_ID: {CLIENT_ID}")
+print(f"🔧 SPOTIPY_CLIENT_SECRET: {'SET' if CLIENT_SECRET else 'NOT SET'}")
+print(f"🔧 SPOTIPY_REDIRECT_URI: {REDIRECT_URI}")
 
 # Helper untuk inisialisasi handler dengan token user
 def get_handler():
@@ -106,6 +114,21 @@ def select_playlist():
 
 #     return jsonify({'results': results})
 
+# @app.route('/download', methods=['POST'])
+# def download():
+#     handler = get_handler()
+#     if not handler:
+#         return jsonify({'error': 'Not logged in'}), 401
+
+#     data = request.get_json()
+#     selected_urls = data.get('tracks', [])
+
+#     zip_path, results = handler.download_selected_tracks(selected_urls)
+
+#     session['download_path'] = zip_path  # Simpan ke session agar bisa diakses di /get_download
+
+#     return jsonify({'results': results, 'download_ready': True})
+
 @app.route('/download', methods=['POST'])
 def download():
     handler = get_handler()
@@ -115,11 +138,17 @@ def download():
     data = request.get_json()
     selected_urls = data.get('tracks', [])
 
-    zip_path, results = handler.download_selected_tracks(selected_urls)
+    try:
+        zip_path, results = handler.download_selected_tracks(selected_urls)
+        session['download_path'] = zip_path  # Simpan ke session agar bisa diakses di /get_download
 
-    session['download_path'] = zip_path  # Simpan ke session agar bisa diakses di /get_download
+        return jsonify({'results': results, 'download_ready': True})
+    
+    except Exception as e:
+        # Log error ke server dan kirim respons error ke klien
+        print(f"[ERROR] Download failed: {e}")
+        return jsonify({'error': 'Download failed', 'details': str(e)}), 500
 
-    return jsonify({'results': results, 'download_ready': True})
 
 @app.route('/get_download')
 def get_download():

@@ -7,6 +7,8 @@ spoticheat_web-env/
 # Cache dan data
 .cache/
 .cache-web/
+.cache
+.cache-web
 *.db
 *.sqlite3
 

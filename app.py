@@ -61,7 +61,8 @@ def login_url():
         show_dialog=True,
         open_browser=False
     )
-    return jsonify({'url': auth_manager.get_authorize_url()})
+    auth_url = auth_manager.get_authorize_url()
+    return jsonify({'url': auth_url})
 
 
 @app.route('/callback')
@@ -185,6 +186,11 @@ def is_logged_in():
 def logout():
     session.clear()
     return redirect('/')
+
+@app.route('/force_logout_spotify')
+def force_logout_spotify():
+    session.clear()
+    return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/")
 
 
 if __name__ == '__main__':

@@ -197,6 +197,7 @@ def force_logout_spotify():
     session.clear()
     return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout")
 
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))  # 5000 buat local default
     app.run(debug=False, host='0.0.0.0', port=port)

@@ -13,7 +13,6 @@ RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Salin semua file project ke dalam container
 COPY . .
-
 # Tentukan port aplikasi Flask
 EXPOSE 5000
 

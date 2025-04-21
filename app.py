@@ -46,7 +46,6 @@ def login_url():
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
-        cache_path=".cache-web",
         show_dialog=True,
         open_browser=False
     )
@@ -62,7 +61,6 @@ def callback():
             client_secret=CLIENT_SECRET,
             redirect_uri=REDIRECT_URI,
             scope=SCOPE,
-            cache_path=".cache-web"
         )
         token_info = auth_manager.get_access_token(code, as_dict=True)
         session['token_info'] = token_info

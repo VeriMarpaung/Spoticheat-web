@@ -27,7 +27,6 @@ class SpotifyHandler:
             client_secret=self.client_secret,
             redirect_uri=self.redirect_uri,
             scope=self.scope,
-            cache_path=".cache-web",
             show_dialog=True,
             open_browser=False
         )

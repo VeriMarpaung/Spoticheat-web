@@ -190,7 +190,7 @@ def logout():
 @app.route('/force_logout_spotify')
 def force_logout_spotify():
     session.clear()
-    return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/")
+    return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/login_url")
 
 
 if __name__ == '__main__':

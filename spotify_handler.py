@@ -81,46 +81,35 @@ class SpotifyHandler:
     def download_selected_tracks(self, selected_urls):
         temp_dir = tempfile.mkdtemp()
         downloaded = []
-
+        
         for url in selected_urls:
             print(f"[DEBUG] Downloading: {url}")
             try:
-                result = subprocess.run(
-                    ["spotdl", url, "--output", temp_dir],
-                    capture_output=True,
-                    text=True
-                )
+                # Gunakan stdout/stderr langsung ke PIPE tanpa capture_output=True (lebih hemat RAM)
+                with open(os.devnull, 'w') as devnull:
+                    result = subprocess.run(
+                        ["spotdl", url, "--output", temp_dir],
+                        stdout=devnull,
+                        stderr=devnull,
+                        timeout=120  # batasi 2 menit per lagu
+                    )
                 if result.returncode == 0:
                     downloaded.append(url)
                 else:
-                    downloaded.append(f"Failed: {url} - {result.stderr}")
+                    downloaded.append(f"Failed: {url} (non-zero exit)")
+            except subprocess.TimeoutExpired:
+                downloaded.append(f"Timeout: {url}")
             except Exception as e:
                 downloaded.append(f"Error: {url} - {str(e)}")
 
-        # ZIP file all downloaded songs
         zip_path = Path(temp_dir).parent / "songs_downloaded.zip"
         shutil.make_archive(str(zip_path).replace(".zip", ""), 'zip', temp_dir)
 
+        # Bersihkan folder temp setelah ZIP dibuat
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
         return str(zip_path), downloaded
-                # Debug: Print isi folder setelah download
-        # print("[DEBUG] Isi folder hasil download:", os.listdir(temp_dir))
 
-        # if not os.listdir(temp_dir):
-        #     print("[WARNING] Folder kosong. Kemungkinan download gagal.")
-        #     return "", downloaded  # ZIP tidak dibuat karena kosong
-
-        # # Buat ZIP
-        # zip_base_path = str(zip_path).replace(".zip", "")
-        # shutil.make_archive(zip_base_path, 'zip', temp_dir)
-
-        # # Flush write
-        # zip_file_path = f"{zip_base_path}.zip"
-        # if os.path.exists(zip_file_path):
-        #     print(f"[DEBUG] ZIP berhasil dibuat di: {zip_file_path}")
-        # else:
-        #     print("[ERROR] ZIP tidak ditemukan setelah dibuat.")
-
-        # return zip_file_path, downloaded
 
 
 

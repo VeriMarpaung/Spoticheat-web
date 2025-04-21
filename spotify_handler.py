@@ -15,7 +15,7 @@ class SpotifyHandler:
     def __init__(self, token_info=None):
         self.client_id = os.getenv("SPOTIPY_CLIENT_ID")
         self.client_secret = os.getenv("SPOTIPY_CLIENT_SECRET")
-        self.redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
+        self.redirect_uri = os.getenv("REDIRECT_URI", "http://localhost:5000/callback")
         # self.redirect_uri = "https://verim.pythonanywhere.com/callback"
         # REDIRECT_URI = "http://localhost:8888/callback"
         self.scope = "user-library-read playlist-read-private playlist-read-collaborative"

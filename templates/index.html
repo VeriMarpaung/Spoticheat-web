@@ -25,7 +25,7 @@
     <pre id="result-box"></pre>
   </div>
 
-  <script>
+  <!-- <script>
     document.addEventListener("DOMContentLoaded", function () {
       // Cek status login
       fetch('/user_info')
@@ -54,6 +54,31 @@
         window.location.href = '/logout';
       };
     });
+  </script> -->
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      // Cek status login
+      fetch('/is_logged_in')
+        .then(res => res.json())
+        .then(data => {
+          if (data.logged_in) {
+            document.getElementById('login-btn').classList.add('hidden');
+            document.getElementById('logout-btn').classList.remove('hidden');
+            const usernameEl = document.getElementById('username');
+            usernameEl.textContent = `🎶 Logged in as ${data.user}`;
+            usernameEl.classList.remove('hidden');
+          } else {
+            // Redirect otomatis ke login Spotify jika belum login
+            fetch('/login_url')
+              .then(res => res.json())
+              .then(data => {
+                window.location.href = data.url;
+              });
+          }
+        });
+    });
+
   </script>
 
   <script src="/static/js/script.js"></script>

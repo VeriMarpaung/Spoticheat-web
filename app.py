@@ -187,11 +187,15 @@ def logout():
     session.clear()
     return redirect('/')
 
+@app.route('/post_logout')
+def post_logout():
+    return render_template('post_logout.html')  # halaman dengan tombol atau auto-redirect
+
+
 @app.route('/force_logout_spotify')
 def force_logout_spotify():
     session.clear()
-    return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/login_url")
-
+    return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))  # 5000 buat local default

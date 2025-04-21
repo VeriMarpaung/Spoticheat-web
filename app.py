@@ -30,8 +30,20 @@ print(f"🔧 SPOTIPY_REDIRECT_URI: {REDIRECT_URI}")
 def get_handler():
     token_info = session.get('token_info')
     if token_info:
+        # Refresh token jika sudah expired
+        auth_manager = SpotifyOAuth(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            redirect_uri=REDIRECT_URI,
+            scope=SCOPE,
+            cache_path=None,
+        )
+        if auth_manager.is_token_expired(token_info):
+            token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
+            session['token_info'] = token_info
         return SpotifyHandler(token_info=token_info)
     return None
+
 
 
 @app.route('/')
@@ -61,6 +73,7 @@ def callback():
             client_secret=CLIENT_SECRET,
             redirect_uri=REDIRECT_URI,
             scope=SCOPE,
+            cache_path=None,
         )
         token_info = auth_manager.get_access_token(code, as_dict=True)
         session['token_info'] = token_info

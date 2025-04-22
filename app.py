@@ -1,48 +1,3 @@
-# from flask import Flask, render_template, request, jsonify, session, redirect
-# from flask import send_file
-# from spotify_handler import SpotifyHandler
-# from spotipy.oauth2 import SpotifyOAuth
-# import threading
-# import os
-# from dotenv import load_dotenv
-# load_dotenv()
-# import logging
-
-
-
-# # Konfigurasi utama
-# CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
-# CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-# # REDIRECT_URI = "https://verim.pythonanywhere.com/callback"
-# REDIRECT_URI = os.getenv("REDIRECT_URI")
-# SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
-
-# app = Flask(__name__)
-# app.secret_key = CLIENT_SECRET  # Untuk session
-# # Logging untuk debug Railway
-# logging.basicConfig(level=logging.DEBUG)
-# print("🚀 Flask App is starting...")
-# print(f"🔧 SPOTIPY_CLIENT_ID: {CLIENT_ID}")
-# print(f"🔧 SPOTIPY_CLIENT_SECRET: {'SET' if CLIENT_SECRET else 'NOT SET'}")
-# print(f"🔧 SPOTIPY_REDIRECT_URI: {REDIRECT_URI}")
-
-# # Helper untuk inisialisasi handler dengan token user
-# def get_handler():
-#     token_info = session.get('token_info')
-#     if token_info:
-#         # Refresh token jika sudah expired
-#         auth_manager = SpotifyOAuth(
-#             client_id=CLIENT_ID,
-#             client_secret=CLIENT_SECRET,
-#             redirect_uri=REDIRECT_URI,
-#             scope=SCOPE,
-#             cache_path=None,
-#         )
-#         if auth_manager.is_token_expired(token_info):
-#             token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
-#             session['token_info'] = token_info
-#         return SpotifyHandler(token_info=token_info)
-#     return None
 from flask import Flask, render_template, request, jsonify, session, redirect, g  # <--- tambahkan g
 from flask import send_file
 from spotify_handler import SpotifyHandler
@@ -114,6 +69,7 @@ def index():
 
 @app.route('/login_url')
 def login_url():
+    session.clear()
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,

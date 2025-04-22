@@ -3,6 +3,7 @@ from flask import send_file
 from spotify_handler import SpotifyHandler
 from spotipy.oauth2 import SpotifyOAuth
 import threading
+import uuid
 import os
 from dotenv import load_dotenv
 load_dotenv()

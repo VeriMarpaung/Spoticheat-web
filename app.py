@@ -56,7 +56,7 @@ import logging
 # Konfigurasi utama
 CLIENT_ID = os.getenv("SPOTIPY_CLIENT_ID")
 CLIENT_SECRET = os.getenv("SPOTIPY_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
+REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 
 app = Flask(__name__)

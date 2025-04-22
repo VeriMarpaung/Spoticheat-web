@@ -70,11 +70,13 @@ def index():
 @app.route('/login_url')
 def login_url():
     session.clear()
+    session['state'] = str(uuid.uuid4())  # state unik
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
+        state=session['state'],
         show_dialog=True,
         open_browser=False
     )
@@ -85,19 +87,31 @@ def login_url():
 @app.route('/callback')
 def callback():
     code = request.args.get('code')
-    if code:
-        auth_manager = SpotifyOAuth(
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-            redirect_uri=REDIRECT_URI,
-            scope=SCOPE,
-            cache_path=None,
-        )
-        token_info = auth_manager.get_access_token(code, as_dict=True)
-        session['token_info'] = token_info
-        return redirect('/dashboard')
-    else:
-        return "Authorization failed.", 400
+    state = request.args.get('state')
+
+    if state != session.get('state'):
+        return "State mismatch. Authentication failed.", 403
+
+    auth_manager = SpotifyOAuth(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        redirect_uri=REDIRECT_URI,
+        scope=SCOPE,
+        cache_path=None,
+    )
+
+    token_info = auth_manager.get_access_token(code, as_dict=True)
+    
+    # ✅ Gunakan token untuk ambil ID user
+    import spotipy
+    sp = spotipy.Spotify(auth=token_info['access_token'])
+    user_id = sp.current_user()['id']
+
+    # 💾 Simpan cache path sesuai user
+    session['token_info'] = token_info
+    session['user_id'] = user_id  # simpan juga ID user
+
+    return redirect('/dashboard')
 
 
 @app.route('/dashboard')
@@ -106,8 +120,12 @@ def dashboard():
     if not handler:
         return redirect('/')
 
+    me = handler.sp.current_user()
+    print(f"[DEBUG] Logged in as: {me['display_name']} ({me['id']})")  # Debug siapa yang login
+
     playlists = handler.get_playlists()
     return render_template("dashboard.html", playlists=playlists)
+
 
 
 @app.route('/select_playlist', methods=['POST'])
@@ -122,41 +140,6 @@ def select_playlist():
     tracks = handler.get_track_list()
     return jsonify({'tracks': tracks})
 
-
-# @app.route('/download', methods=['POST'])
-# def download():
-#     handler = get_handler()
-#     if not handler:
-#         return jsonify({'error': 'Not logged in'}), 401
-
-#     data = request.get_json()
-#     selected_urls = data.get('tracks', [])
-#     results = []
-
-#     def _download():
-#         nonlocal results
-#         results.extend(handler.download_selected_tracks(selected_urls))
-
-#     thread = threading.Thread(target=_download)
-#     thread.start()
-#     thread.join()
-
-#     return jsonify({'results': results})
-
-# @app.route('/download', methods=['POST'])
-# def download():
-#     handler = get_handler()
-#     if not handler:
-#         return jsonify({'error': 'Not logged in'}), 401
-
-#     data = request.get_json()
-#     selected_urls = data.get('tracks', [])
-
-#     zip_path, results = handler.download_selected_tracks(selected_urls)
-
-#     session['download_path'] = zip_path  # Simpan ke session agar bisa diakses di /get_download
-
-#     return jsonify({'results': results, 'download_ready': True})
 
 @app.route('/download', methods=['POST'])
 def download():

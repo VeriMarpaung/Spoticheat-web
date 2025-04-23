@@ -31,8 +31,8 @@ app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
 app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # ✅ Tambahan penting agar cookie berlaku lintas subdomain
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+# app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # ✅ Tambahan penting agar cookie berlaku lintas subdomain
 
 Session(app)
 
@@ -99,8 +99,8 @@ def login_url():
     session.clear()
     state = str(uuid.uuid4())
     session['state'] = state
-    logger.info(f"[LOGIN] Generated session state: {session['state']}")  # ✅ Log state untuk debugging
-
+    logger.info(f"[LOGIN] Generated session state: {state}")
+    logger.info(f"[LOGIN] Session state after set: {session.get('state')}")
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,

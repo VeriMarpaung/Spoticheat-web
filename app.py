@@ -21,7 +21,8 @@ SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 app = Flask(__name__)
 CORS(app, supports_credentials=True)  # Jika menggunakan frontend JS
 
-app.secret_key = os.urandom(24)
+# ✅ UPDATE: Gunakan secret key dari .env agar konsisten antar deploy
+app.secret_key = os.getenv("SECRET_KEY", "supersecretkey")
 
 # Konfigurasi Redis untuk sesi
 app.config['SESSION_TYPE'] = 'redis'
@@ -31,12 +32,19 @@ app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # 👈 Tambahan penting
+app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # ✅ Tambahan penting agar cookie berlaku lintas subdomain
 
 Session(app)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("spoticheat")
+
+# ✅ TEST Redis connection
+try:
+    app.config['SESSION_REDIS'].ping()
+    logger.info("✅ Redis connection OK")
+except Exception as e:
+    logger.error(f"❌ Redis connection FAILED: {e}")
 
 logger.info("🚀 Flask App is starting...")
 logger.info(f"🔧 SPOTIPY_REDIRECT_URI: {REDIRECT_URI}")
@@ -89,8 +97,10 @@ def index():
 @app.route('/login_url')
 def login_url():
     session.clear()
-    session['state'] = str(uuid.uuid4())
-    logger.info(f"[LOGIN] Generated session state: {session['state']}")  # 👈 Tambahkan log state
+    state = str(uuid.uuid4())
+    session['state'] = state
+    logger.info(f"[LOGIN] Generated session state: {session['state']}")  # ✅ Log state untuk debugging
+
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
@@ -103,13 +113,17 @@ def login_url():
     auth_url = auth_manager.get_authorize_url()
     return jsonify({'url': auth_url})
 
-
 @app.route('/callback')
 def callback():
     code = request.args.get('code')
     state = request.args.get('state')
 
+    # ✅ DEBUG: Log session dan callback state
+    logger.info(f"[CALLBACK] Callback state: {state}")
+    logger.info(f"[CALLBACK] Session state: {session.get('state')}")
+
     if state != session.get('state'):
+        logger.warning("⚠️ State mismatch detected!")
         return "State mismatch. Authentication failed.", 403
 
     auth_manager = SpotifyOAuth(

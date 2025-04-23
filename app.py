@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, g
 from flask import send_file
 from spotify_handler import SpotifyHandler
 from spotipy.oauth2 import SpotifyOAuth
-import threading
+from flask_session import Session  # <--- Import Flask-Session
 import uuid
 import os
 from dotenv import load_dotenv
@@ -17,6 +17,15 @@ SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 
 app = Flask(__name__)
 app.secret_key = CLIENT_SECRET  # Untuk session
+
+# Konfigurasi Flask-Session untuk Redis
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_REDIS'] = os.getenv('REDIS_URL')  # Pastikan variabel lingkungan REDIS_URL diatur di Railway
+app.config['SESSION_PERMANENT'] = True
+app.config['SESSION_USE_SIGNER'] = True
+app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
+
+Session(app)  # <--- Inisialisasi Flask-Session dengan aplikasi Flask
 
 # Logging untuk debug Railway
 logging.basicConfig(level=logging.DEBUG)
@@ -61,8 +70,6 @@ def get_handler():
     return None
 
 
-
-
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -102,13 +109,13 @@ def callback():
     )
 
     token_info = auth_manager.get_access_token(code, as_dict=True)
-    
+
     # ✅ Gunakan token untuk ambil ID user
     import spotipy
     sp = spotipy.Spotify(auth=token_info['access_token'])
     user_id = sp.current_user()['id']
 
-    # 💾 Simpan cache path sesuai user
+    # 💾 Simpan informasi sesi ke Redis melalui Flask-Session
     session['token_info'] = token_info
     session['user_id'] = user_id  # simpan juga ID user
 
@@ -126,7 +133,6 @@ def dashboard():
 
     playlists = handler.get_playlists()
     return render_template("dashboard.html", playlists=playlists)
-
 
 
 @app.route('/select_playlist', methods=['POST'])
@@ -156,7 +162,7 @@ def download():
         session['download_path'] = zip_path  # Simpan ke session agar bisa diakses di /get_download
 
         return jsonify({'results': results, 'download_ready': True})
-    
+
     except Exception as e:
         # Log error ke server dan kirim respons error ke klien
         print(f"[ERROR] Download failed: {e}")
@@ -202,4 +208,3 @@ def force_logout_spotify():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))  # 5000 buat local default
     app.run(debug=False, host='0.0.0.0', port=port)
-

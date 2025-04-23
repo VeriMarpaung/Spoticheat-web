@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, session, redirect, g, send_file
 from flask_session import Session
+from flask_cors import CORS
 from spotify_handler import SpotifyHandler
 from spotipy.oauth2 import SpotifyOAuth
 import spotipy
@@ -18,16 +19,19 @@ REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True)  # Jika menggunakan frontend JS
+
 app.secret_key = os.urandom(24)
 
 # Konfigurasi Redis untuk sesi
 app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_REDIS'] = redis.from_url(os.getenv("REDIS_URL"))  # Gunakan ENV variable
+app.config['SESSION_REDIS'] = redis.from_url(os.getenv("REDIS_URL"))
 app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # 👈 Tambahan penting
 
 Session(app)
 
@@ -36,6 +40,8 @@ logger = logging.getLogger("spoticheat")
 
 logger.info("🚀 Flask App is starting...")
 logger.info(f"🔧 SPOTIPY_REDIRECT_URI: {REDIRECT_URI}")
+logger.info(f"🔧 SPOTIPY_CLIENT_ID: {CLIENT_ID}")
+logger.info(f"🔧 SPOTIPY_CLIENT_SECRET: SET")
 
 
 def refresh_token_if_needed():
@@ -84,6 +90,7 @@ def index():
 def login_url():
     session.clear()
     session['state'] = str(uuid.uuid4())
+    logger.info(f"[LOGIN] Generated session state: {session['state']}")  # 👈 Tambahkan log state
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,

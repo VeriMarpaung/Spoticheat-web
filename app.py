@@ -20,7 +20,7 @@ app.secret_key = CLIENT_SECRET  # Untuk session
 
 # Konfigurasi Flask-Session untuk Redis
 app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_REDIS'] = os.getenv("REDIS_URL")  # Pastikan variabel lingkungan REDIS_URL diatur di Railway
+app.config['SESSION_REDIS'] = os.getenv('redis://default:PvhBBpsuCMXpPtapzuOnhlHAsqtHEJGm@redis.railway.internal:6379')  # Pastikan variabel lingkungan REDIS_URL diatur di Railway
 app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'

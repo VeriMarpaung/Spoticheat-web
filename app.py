@@ -20,7 +20,7 @@ SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 app = Flask(__name__)
 app.secret_key = CLIENT_SECRET
 
-# ✅ Konfigurasi Redis sebagai backend session yang benar
+# ✅ Konfigurasi Redis session
 app.config['SESSION_TYPE'] = 'redis'
 app.config['SESSION_REDIS'] = redis.from_url(
     "redis://default:PvhBBpsuCMXpPtapzuOnhlHAsqtHEJGm@redis.railway.internal:6379"
@@ -28,15 +28,25 @@ app.config['SESSION_REDIS'] = redis.from_url(
 app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 
+# Inisialisasi session
 Session(app)
 
+# Logging
 logging.basicConfig(level=logging.DEBUG)
 print("🚀 Flask App is starting...")
 print(f"🔧 SPOTIPY_CLIENT_ID: {CLIENT_ID}")
 print(f"🔧 SPOTIPY_CLIENT_SECRET: {'SET' if CLIENT_SECRET else 'NOT SET'}")
 print(f"🔧 SPOTIPY_REDIRECT_URI: {REDIRECT_URI}")
 
+# ✅ Tes koneksi Redis
+try:
+    app.config['SESSION_REDIS'].ping()
+    print("✅ Redis is connected")
+except Exception as e:
+    print(f"❌ Redis connection failed: {e}")
 
 def refresh_token_if_needed():
     token_info = session.get('token_info')
@@ -54,32 +64,29 @@ def refresh_token_if_needed():
     if auth_manager.is_token_expired(token_info):
         token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
         session['token_info'] = token_info
-        session.modified = True  # ✅ Pastikan session diupdate di Redis
+        session.modified = True
 
     return token_info
-
 
 @app.before_request
 def load_token_info():
     token_info = refresh_token_if_needed()
     g.token_info = token_info
 
-
 def get_handler():
     if g.get('token_info'):
         return SpotifyHandler(token_info=g.token_info)
     return None
 
-
 @app.route('/')
 def index():
     return render_template('index.html')
-
 
 @app.route('/login_url')
 def login_url():
     session.clear()
     session['state'] = str(uuid.uuid4())
+    print(f"[LOGIN] Generated session state: {session['state']}")
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
@@ -92,11 +99,12 @@ def login_url():
     auth_url = auth_manager.get_authorize_url()
     return jsonify({'url': auth_url})
 
-
 @app.route('/callback')
 def callback():
     code = request.args.get('code')
     state = request.args.get('state')
+    print(f"[CALLBACK] Received state: {state}")
+    print(f"[CALLBACK] Session state: {session.get('state')}")
 
     if state != session.get('state'):
         return "State mismatch. Authentication failed.", 403
@@ -106,21 +114,19 @@ def callback():
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
+        state=session['state'],
         cache_path=None,
     )
 
     token_info = auth_manager.get_access_token(code, as_dict=True)
-
     sp = spotipy.Spotify(auth=token_info['access_token'])
     user_id = sp.current_user()['id']
 
-    # ✅ Simpan token dan user_id, dan tandai session dimodifikasi
     session['token_info'] = token_info
     session['user_id'] = user_id
     session.modified = True
 
     return redirect('/dashboard')
-
 
 @app.route('/dashboard')
 def dashboard():
@@ -131,7 +137,6 @@ def dashboard():
     me = handler.sp.current_user()
     print(f"[DEBUG] Logged in as: {me['display_name']} ({me['id']})")
 
-    # ✅ Validasi user ID dari session untuk cegah kebocoran
     if me['id'] != session.get('user_id'):
         print("[WARNING] Session mismatch: clearing session")
         session.clear()
@@ -139,7 +144,6 @@ def dashboard():
 
     playlists = handler.get_playlists()
     return render_template("dashboard.html", playlists=playlists)
-
 
 @app.route('/select_playlist', methods=['POST'])
 def select_playlist():
@@ -153,7 +157,6 @@ def select_playlist():
     tracks = handler.get_track_list()
     return jsonify({'tracks': tracks})
 
-
 @app.route('/download', methods=['POST'])
 def download():
     handler = get_handler()
@@ -166,12 +169,11 @@ def download():
     try:
         zip_path, results = handler.download_selected_tracks(selected_urls)
         session['download_path'] = zip_path
-        session.modified = True  # Simpan update ke Redis
+        session.modified = True
         return jsonify({'results': results, 'download_ready': True})
     except Exception as e:
         print(f"[ERROR] Download failed: {e}")
         return jsonify({'error': 'Download failed', 'details': str(e)}), 500
-
 
 @app.route('/get_download')
 def get_download():
@@ -179,7 +181,6 @@ def get_download():
     if not path or not os.path.exists(path):
         return "File tidak ditemukan.", 404
     return send_file(path, as_attachment=True, download_name='spoticheat_download.zip')
-
 
 @app.route('/is_logged_in')
 def is_logged_in():
@@ -192,23 +193,19 @@ def is_logged_in():
     except:
         return jsonify({'logged_in': False})
 
-
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect('/')
 
-
 @app.route('/post_logout')
 def post_logout():
     return render_template('post_logout.html')
-
 
 @app.route('/force_logout_spotify')
 def force_logout_spotify():
     session.clear()
     return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout")
-
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

@@ -30,9 +30,9 @@ app.config['SESSION_REDIS'] = redis.from_url(os.getenv("REDIS_URL"))
 app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # ✅ Tambahan penting agar cookie berlaku lintas subdomain
+app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # cookie tersedia untuk subdomain
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'         # cookie ikut terkirim di cross-site redirect
+app.config['SESSION_COOKIE_SECURE'] = True             # wajib untuk HTTPS
 
 Session(app)
 

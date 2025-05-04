@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, g, send_file
+from flask import Flask, render_template, request, jsonify, session, redirect, g, send_file, make_response
 from flask_session import Session
 from flask_cors import CORS
 from spotify_handler import SpotifyHandler
@@ -33,7 +33,8 @@ app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
 
 # Memperbaiki konfigurasi cookie untuk session
 app.config['SESSION_COOKIE_NAME'] = 'spoticheat_session'  # Nama jelas untuk session cookie
-app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # cookie tersedia untuk subdomain
+# FIXED: Remove specific domain to prevent cookie persistence issues across requests
+# app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # cookie tersedia untuk subdomain
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'         # cookie ikut terkirim di cross-site redirect
 app.config['SESSION_COOKIE_SECURE'] = True             # wajib untuk HTTPS
 
@@ -90,6 +91,20 @@ def load_token_info():
     # Tambahkan log untuk debugging session
     logger.debug(f"Current session user: {session.get('user_id')}")
     logger.debug(f"Has token_info: {bool(g.token_info)}")
+    
+    # ADDED: Verify token matches current user
+    if g.token_info and 'access_token' in g.token_info:
+        try:
+            sp = spotipy.Spotify(auth=g.token_info['access_token'])
+            current_user = sp.current_user()
+            if current_user['id'] != session.get('user_id'):
+                logger.warning(f"Session user mismatch! Session: {session.get('user_id')}, Token: {current_user['id']}")
+                session.clear()
+                g.token_info = None
+        except Exception as e:
+            logger.error(f"Token verification error: {e}")
+            session.clear()
+            g.token_info = None
 
 
 def get_handler():
@@ -120,16 +135,23 @@ def login_url():
     # Force clear any existing session before starting a new login
     session.clear()
     
+    # ADDED: Clear session cookies directly
+    response = make_response(jsonify({'clearing': 'session'}))
+    response.delete_cookie('spoticheat_session')
+    
     state = str(uuid.uuid4())
     session['state'] = state
+    session.modified = True
+    
     logger.info(f"[LOGIN] Generated session state: {state}")
     logger.info(f"[LOGIN] Session state after set: {session.get('state')}")
+    
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
-        state=session['state'],
+        state=state,
         show_dialog=True,  # Force Spotify to ask for permission again
         open_browser=False
     )
@@ -273,6 +295,11 @@ def is_logged_in():
         return jsonify({'logged_in': False})
     try:
         user = handler.sp.current_user()
+        # ADDED: Verify user ID matches session
+        if user['id'] != session.get('user_id'):
+            logger.warning(f"User ID mismatch in is_logged_in: {user['id']} vs {session.get('user_id')}")
+            session.clear()
+            return jsonify({'logged_in': False})
         return jsonify({'logged_in': True, 'user': user['display_name']})
     except:
         # If there's an error, clear the session
@@ -286,7 +313,11 @@ def logout():
     user_id = session.get('user_id')
     logger.info(f"Logging out user: {user_id}")
     session.clear()
-    return redirect('/')
+    
+    # ADDED: Explicitly delete cookies
+    response = make_response(redirect('/'))
+    response.delete_cookie('spoticheat_session')
+    return response
 
 
 @app.route('/post_logout')
@@ -297,8 +328,13 @@ def post_logout():
 @app.route('/force_logout_spotify')
 def force_logout_spotify():
     session.clear()
+    
+    # ADDED: Create response and clear cookies
+    response = make_response(redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout"))
+    response.delete_cookie('spoticheat_session')
+    
     # Mengarahkan ke halaman logout Spotify kemudian kembali ke post_logout
-    return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout")
+    return response
 
 
 if __name__ == '__main__':

@@ -2,12 +2,30 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spoticheat Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <style>
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .alert {
+            display: none;
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body class="bg-dark text-white">
     <div class="container mt-5">
         <h1 class="mb-4">🎵 Selamat datang di Spoticheat, Boss!</h1>
+        
+        <!-- User Info Section -->
+        <div class="alert alert-info" id="userInfo">
+            Logged in as: <span id="userDisplay"></span>
+        </div>
+        
         <div class="mb-3">
             <label for="playlistSelect" class="form-label">Pilih Playlist:</label>
             <select id="playlistSelect" class="form-select">
@@ -18,82 +36,155 @@
             </select>
         </div>
 
-        <!-- ... -->
-        <div id="trackList" class="mt-4"></div>
-
-        <button id="download-selected" class="btn btn-success mt-3 d-none">Download Terpilih</button>
-
-        <!-- Tombol logout -->
-        <div class="mt-4">
-            <a href="/logout" class="btn btn-outline-light float-end me-2">Logout App</a>
-            <a href="/force_logout_spotify" class="btn btn-outline-danger float-end">Logout Spotify</a>
+        <div class="loading" id="loading">
+            <div class="spinner-border text-light" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Memuat daftar lagu...</p>
         </div>
 
-        <button id="download-selected" class="btn btn-success mt-3 d-none">Download Terpilih</button>
-        <!-- <a href="/logout" class="btn btn-outline-light float-end mt-3">Logout</a> -->
+        <div class="alert alert-danger" id="errorAlert"></div>
+
+        <div id="trackList" class="mt-4"></div>
+
+        <div class="d-flex justify-content-between mt-4">
+            <button id="download-selected" class="btn btn-success mt-3 d-none">Download Terpilih</button>
+            
+            <div>
+                <a href="/logout" class="btn btn-outline-light me-2">Logout App</a>
+                <a href="/force_logout_spotify" class="btn btn-outline-danger">Logout Spotify</a>
+            </div>
+        </div>
     </div>
     
-
     <script>
+        // Tampilkan informasi user
+        fetch('/user_info')
+            .then(response => response.json())
+            .then(data => {
+                if (data.logged_in) {
+                    document.getElementById('userDisplay').textContent = data.username;
+                    document.getElementById('userInfo').style.display = 'block';
+                } else {
+                    // Redirect ke halaman login jika tidak terautentikasi
+                    window.location.href = '/';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('errorAlert').textContent = 'Error loading user info';
+                document.getElementById('errorAlert').style.display = 'block';
+            });
+
         const playlistSelect = document.getElementById('playlistSelect');
         const trackListDiv = document.getElementById('trackList');
         const downloadBtn = document.getElementById('download-selected');
+        const loadingElement = document.getElementById('loading');
+        const errorAlert = document.getElementById('errorAlert');
         let selectedTracks = [];
 
         playlistSelect.addEventListener('change', () => {
             const playlist = playlistSelect.value;
+            
+            // Reset dan tampilkan loading
+            trackListDiv.innerHTML = '';
+            loadingElement.style.display = 'block';
+            errorAlert.style.display = 'none';
+            downloadBtn.classList.add('d-none');
+            
             fetch('/select_playlist', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ playlist: playlist })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(data => {
+                loadingElement.style.display = 'none';
+                
                 const tracks = data.tracks;
                 selectedTracks = [];
 
+                if (tracks.length === 0) {
+                    trackListDiv.innerHTML = '<p class="alert alert-warning">Playlist ini tidak memiliki lagu</p>';
+                    return;
+                }
+
                 let html = '<h5>Daftar Lagu:</h5>';
+                html += '<div class="mb-2"><button id="select-all" class="btn btn-sm btn-outline-info">Select All</button> <button id="deselect-all" class="btn btn-sm btn-outline-warning ms-2">Deselect All</button></div>';
                 html += '<ul class="list-group">';
                 tracks.forEach((track, i) => {
                     html += `
                         <li class="list-group-item bg-secondary text-white">
-                            <input type="checkbox" id="track${i}" data-url="${track.url}">
-                            <label for="track${i}">${track.name} - ${track.artist}</label>
+                            <div class="form-check">
+                                <input class="form-check-input track-checkbox" type="checkbox" id="track${i}" data-url="${track.url}">
+                                <label class="form-check-label" for="track${i}">${track.name} - ${track.artist}</label>
+                            </div>
                         </li>
                     `;
                 });
                 html += '</ul>';
                 trackListDiv.innerHTML = html;
                 downloadBtn.classList.remove('d-none');
+                
+                // Add select/deselect all functionality
+                document.getElementById('select-all').addEventListener('click', () => {
+                    document.querySelectorAll('.track-checkbox').forEach(cb => {
+                        cb.checked = true;
+                    });
+                });
+                
+                document.getElementById('deselect-all').addEventListener('click', () => {
+                    document.querySelectorAll('.track-checkbox').forEach(cb => {
+                        cb.checked = false;
+                    });
+                });
+            })
+            .catch(error => {
+                loadingElement.style.display = 'none';
+                errorAlert.textContent = 'Error loading tracks: ' + error.message;
+                errorAlert.style.display = 'block';
+                console.error('Error:', error);
             });
         });
 
-        // downloadBtn.addEventListener('click', () => {
-        //     const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
-        //     const urls = Array.from(checkboxes).map(cb => cb.getAttribute('data-url'));
-
-        //     fetch('/download', {
-        //         method: 'POST',
-        //         headers: {'Content-Type': 'application/json'},
-        //         body: JSON.stringify({ tracks: urls })
-        //     })
-        //     .then(response => response.json())
-        //     .then(data => {
-        //         alert("Download selesai:\n" + data.results.join('\n'));
-        //     });
-        // });
         downloadBtn.addEventListener('click', () => {
             const checkboxes = document.querySelectorAll('input[type="checkbox"]:checked');
+            
+            if (checkboxes.length === 0) {
+                errorAlert.textContent = 'Please select at least one track to download';
+                errorAlert.style.display = 'block';
+                return;
+            }
+            
             const urls = Array.from(checkboxes).map(cb => cb.getAttribute('data-url'));
+            
+            // Show loading state
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Downloading...';
+            errorAlert.style.display = 'none';
 
             fetch('/download', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ tracks: urls })
             })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(data => {
-                alert("Download selesai:\n" + data.results.join('\n'));
+                // Reset button state
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = 'Download Terpilih';
+                
+                alert("Download selesai!\n" + data.results.length + " files processed.");
 
                 if (data.download_ready) {
                     // Trigger download popup
@@ -104,9 +195,17 @@
                     a.click();
                     document.body.removeChild(a);
                 }
+            })
+            .catch(error => {
+                // Reset button state on error
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = 'Download Terpilih';
+                
+                errorAlert.textContent = 'Download failed: ' + error.message;
+                errorAlert.style.display = 'block';
+                console.error('Error:', error);
             });
         });
-
     </script>
 </body>
 </html>

@@ -3,6 +3,7 @@
 <head>
   <title>Spoticheat Web</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
   <div class="container">
@@ -16,9 +17,6 @@
 
     <select id="playlist-select" disabled></select>
     <div id="track-list"></div>
-
-    <!-- <button id="download-selected" disabled>Download Selected</button>
-    <button id="download-all" disabled>Download All</button> -->
 
     <div id="spinner" class="hidden">⏳ Downloading...</div>
     <p id="status-msg"></p>
@@ -37,7 +35,13 @@
             const usernameEl = document.getElementById('username');
             usernameEl.textContent = `🎶 Logged in as ${data.username}`;
             usernameEl.classList.remove('hidden');
+            
+            // Redirect ke dashboard jika sudah login
+            window.location.href = '/dashboard';
           }
+        })
+        .catch(err => {
+          console.error("Error checking login status:", err);
         });
 
       // Login button
@@ -46,6 +50,10 @@
           .then(res => res.json())
           .then(data => {
             window.location.href = data.url;
+          })
+          .catch(err => {
+            console.error("Login error:", err);
+            document.getElementById("status-msg").innerText = "❌ Login error. Please try again.";
           });
       };
 
@@ -55,31 +63,6 @@
       };
     });
   </script>
-
-  <!-- <script>
-    document.addEventListener("DOMContentLoaded", function () {
-      // Cek status login
-      fetch('/is_logged_in')
-        .then(res => res.json())
-        .then(data => {
-          if (data.logged_in) {
-            document.getElementById('login-btn').classList.add('hidden');
-            document.getElementById('logout-btn').classList.remove('hidden');
-            const usernameEl = document.getElementById('username');
-            usernameEl.textContent = `🎶 Logged in as ${data.user}`;
-            usernameEl.classList.remove('hidden');
-          } else {
-            // Redirect otomatis ke login Spotify jika belum login
-            fetch('/login_url')
-              .then(res => res.json())
-              .then(data => {
-                window.location.href = data.url;
-              });
-          }
-        });
-    });
-
-  </script> -->
 
   <script src="/static/js/script.js"></script>
 </body>

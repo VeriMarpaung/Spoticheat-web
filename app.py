@@ -30,6 +30,9 @@ app.config['SESSION_REDIS'] = redis.from_url(os.getenv("REDIS_URL"))
 app.config['SESSION_PERMANENT'] = True
 app.config['SESSION_USE_SIGNER'] = True
 app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
+
+# Memperbaiki konfigurasi cookie untuk session
+app.config['SESSION_COOKIE_NAME'] = 'spoticheat_session'  # Nama jelas untuk session cookie
 app.config['SESSION_COOKIE_DOMAIN'] = '.railway.app'  # cookie tersedia untuk subdomain
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'         # cookie ikut terkirim di cross-site redirect
 app.config['SESSION_COOKIE_SECURE'] = True             # wajib untuk HTTPS
@@ -55,6 +58,7 @@ logger.info(f"🔧 SPOTIPY_CLIENT_SECRET: SET")
 def refresh_token_if_needed():
     token_info = session.get('token_info')
     if not token_info:
+        logger.info("No token_info in session")
         return None
 
     auth_manager = SpotifyOAuth(
@@ -67,6 +71,7 @@ def refresh_token_if_needed():
 
     if auth_manager.is_token_expired(token_info):
         try:
+            logger.info(f"Refreshing token for user {session.get('user_id')}")
             token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
             session['token_info'] = token_info
             session.modified = True
@@ -81,6 +86,10 @@ def refresh_token_if_needed():
 @app.before_request
 def load_token_info():
     g.token_info = refresh_token_if_needed()
+    
+    # Tambahkan log untuk debugging session
+    logger.debug(f"Current session user: {session.get('user_id')}")
+    logger.debug(f"Has token_info: {bool(g.token_info)}")
 
 
 def get_handler():
@@ -91,12 +100,26 @@ def get_handler():
 
 @app.route('/')
 def index():
+    # Check if user is already logged in
+    handler = get_handler()
+    if handler:
+        try:
+            # Verify the token is valid
+            user = handler.sp.current_user()
+            if user['id'] == session.get('user_id'):
+                return redirect('/dashboard')
+        except:
+            # If there's any error, clear the session
+            session.clear()
+    
     return render_template('index.html')
 
 
 @app.route('/login_url')
 def login_url():
+    # Force clear any existing session before starting a new login
     session.clear()
+    
     state = str(uuid.uuid4())
     session['state'] = state
     logger.info(f"[LOGIN] Generated session state: {state}")
@@ -107,11 +130,13 @@ def login_url():
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
         state=session['state'],
-        show_dialog=True,
+        show_dialog=True,  # Force Spotify to ask for permission again
         open_browser=False
     )
     auth_url = auth_manager.get_authorize_url()
+    logger.info(f"Auth URL generated: {auth_url[:50]}...")
     return jsonify({'url': auth_url})
+
 
 @app.route('/callback')
 def callback():
@@ -124,6 +149,8 @@ def callback():
 
     if state != session.get('state'):
         logger.warning("⚠️ State mismatch detected!")
+        # Clear session in case of mismatch
+        session.clear()
         return "State mismatch. Authentication failed.", 403
 
     auth_manager = SpotifyOAuth(
@@ -137,15 +164,24 @@ def callback():
     try:
         token_info = auth_manager.get_access_token(code, as_dict=True)
         sp = spotipy.Spotify(auth=token_info['access_token'])
-        user_id = sp.current_user()['id']
+        user_info = sp.current_user()
+        user_id = user_info['id']
 
+        # Clear any old session data first
+        session.clear()
+        
+        # Set new session data
         session['token_info'] = token_info
         session['user_id'] = user_id
+        session['user_name'] = user_info.get('display_name', user_id)
         session.modified = True
+        
+        logger.info(f"User {user_id} successfully logged in")
 
         return redirect('/dashboard')
     except Exception as e:
         logger.error(f"Callback error: {e}")
+        session.clear()
         return "Callback error", 500
 
 
@@ -153,20 +189,41 @@ def callback():
 def dashboard():
     handler = get_handler()
     if not handler:
+        logger.warning("Attempt to access dashboard without valid handler")
         return redirect('/')
 
     try:
         me = handler.sp.current_user()
         if me['id'] != session.get('user_id'):
+            logger.warning(f"User ID mismatch: {me['id']} vs {session.get('user_id')}")
             session.clear()
             return redirect('/')
 
         playlists = handler.get_playlists()
+        logger.info(f"Retrieved {len(playlists)} playlists for user {me['id']}")
         return render_template("dashboard.html", playlists=playlists)
     except Exception as e:
         logger.error(f"Dashboard error: {e}")
         session.clear()
         return redirect('/')
+
+
+@app.route('/user_info')
+def user_info():
+    handler = get_handler()
+    if not handler:
+        return jsonify({'logged_in': False})
+    try:
+        user = handler.sp.current_user()
+        return jsonify({
+            'logged_in': True, 
+            'username': user.get('display_name', user.get('id')),
+            'user_id': user.get('id')
+        })
+    except Exception as e:
+        logger.error(f"Error getting user info: {e}")
+        session.clear()  # Clear invalid session
+        return jsonify({'logged_in': False})
 
 
 @app.route('/select_playlist', methods=['POST'])
@@ -218,11 +275,16 @@ def is_logged_in():
         user = handler.sp.current_user()
         return jsonify({'logged_in': True, 'user': user['display_name']})
     except:
+        # If there's an error, clear the session
+        session.clear()
         return jsonify({'logged_in': False})
 
 
 @app.route('/logout')
 def logout():
+    # Ensure session is fully cleared
+    user_id = session.get('user_id')
+    logger.info(f"Logging out user: {user_id}")
     session.clear()
     return redirect('/')
 
@@ -235,6 +297,7 @@ def post_logout():
 @app.route('/force_logout_spotify')
 def force_logout_spotify():
     session.clear()
+    # Mengarahkan ke halaman logout Spotify kemudian kembali ke post_logout
     return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout")
 
 

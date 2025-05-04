@@ -1,5 +1,4 @@
-from flask import Flask, render_template, request, jsonify, session, redirect, g, send_file, make_response
-from flask_session import Session
+from flask import Flask, render_template, request, jsonify, redirect, g, send_file, make_response
 from flask_cors import CORS
 from spotify_handler import SpotifyHandler
 from spotipy.oauth2 import SpotifyOAuth
@@ -8,6 +7,7 @@ import os
 import uuid
 import redis
 import logging
+import json
 import time
 from dotenv import load_dotenv
 
@@ -20,33 +20,20 @@ REDIRECT_URI = os.getenv("SPOTIPY_REDIRECT_URI")
 SCOPE = "user-library-read playlist-read-private playlist-read-collaborative"
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)
+CORS(app, supports_credentials=True)  # Allow CORS with credentials
 
 # ✅ UPDATE: Gunakan secret key dari .env agar konsisten antar deploy
 app.secret_key = os.getenv("SECRET_KEY", "supersecretkey")
 
-# Konfigurasi Redis untuk sesi - with more aggressive session management
-app.config['SESSION_TYPE'] = 'redis'
-app.config['SESSION_REDIS'] = redis.from_url(os.getenv("REDIS_URL"))
-app.config['SESSION_PERMANENT'] = False  # Changed to False to expire after browser close
-app.config['SESSION_USE_SIGNER'] = True
-app.config['SESSION_KEY_PREFIX'] = 'spoticheat_'
-app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # Session expires after 1 hour
-
-# Memperbaiki konfigurasi cookie untuk session
-app.config['SESSION_COOKIE_NAME'] = 'spoticheat_session'
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # Changed from 'None' to 'Lax' for better security
-app.config['SESSION_COOKIE_SECURE'] = True
-
-Session(app)
+# Initialize Redis client directly (no Flask-Session)
+redis_client = redis.from_url(os.getenv("REDIS_URL"))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("spoticheat")
 
-# ✅ TEST Redis connection
+# Test Redis connection
 try:
-    app.config['SESSION_REDIS'].ping()
+    redis_client.ping()
     logger.info("✅ Redis connection OK")
 except Exception as e:
     logger.error(f"❌ Redis connection FAILED: {e}")
@@ -56,146 +43,214 @@ logger.info(f"🔧 SPOTIPY_REDIRECT_URI: {REDIRECT_URI}")
 logger.info(f"🔧 SPOTIPY_CLIENT_ID: {CLIENT_ID}")
 logger.info(f"🔧 SPOTIPY_CLIENT_SECRET: SET")
 
-# Utility function to generate a unique session ID
+# Custom session management
+SESSION_COOKIE_NAME = 'sc_session'
+SESSION_PREFIX = 'sc_sess:'
+SESSION_LIFETIME = 3600  # 1 hour in seconds
+
 def generate_session_id():
-    return f"session_{uuid.uuid4().hex}"
+    """Generate a unique session ID"""
+    return f"{uuid.uuid4().hex}"
 
-def refresh_token_if_needed():
-    token_info = session.get('token_info')
-    if not token_info:
-        logger.info("No token_info in session")
+def create_session():
+    """Create a new session and return session ID"""
+    session_id = generate_session_id()
+    session_data = {
+        'created_at': int(time.time()),
+        'state': str(uuid.uuid4()),  # Create OAuth state immediately
+    }
+    save_session(session_id, session_data)
+    return session_id
+
+def get_session(session_id):
+    """Get session data from Redis"""
+    if not session_id:
         return None
-
-    auth_manager = SpotifyOAuth(
-        client_id=CLIENT_ID,
-        client_secret=CLIENT_SECRET,
-        redirect_uri=REDIRECT_URI,
-        scope=SCOPE,
-        cache_path=None,
-    )
-
-    if auth_manager.is_token_expired(token_info):
-        try:
-            logger.info(f"Refreshing token for user {session.get('user_id')}")
-            token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
-            session['token_info'] = token_info
-            session.modified = True
-        except Exception as e:
-            logger.error(f"Failed to refresh token: {e}")
-            clear_session()
-            return None
-
-    return token_info
-
-# Function to properly clear all session data
-def clear_session():
-    # Get the session ID if it exists
-    if session.sid:
-        try:
-            # Try to delete the session from Redis directly
-            app.config['SESSION_REDIS'].delete(f"{app.config['SESSION_KEY_PREFIX']}{session.sid}")
-            logger.info(f"Deleted session {session.sid} from Redis")
-        except Exception as e:
-            logger.error(f"Failed to delete session from Redis: {e}")
     
-    # Clear the Flask session
-    session.clear()
-    logger.info("Session cleared")
-
-@app.before_request
-def load_token_info():
-    # Log every request for debugging
-    logger.debug(f"Request path: {request.path}")
-    logger.debug(f"Session ID: {session.get('_id')}")
-    logger.debug(f"Session User ID: {session.get('user_id')}")
+    key = f"{SESSION_PREFIX}{session_id}"
+    data = redis_client.get(key)
+    
+    if not data:
+        return None
     
     try:
-        g.token_info = refresh_token_if_needed()
+        return json.loads(data)
+    except:
+        return None
+
+def save_session(session_id, data):
+    """Save session data to Redis"""
+    key = f"{SESSION_PREFIX}{session_id}"
+    redis_client.setex(key, SESSION_LIFETIME, json.dumps(data))
+    logger.debug(f"Saved session {session_id}")
+
+def delete_session(session_id):
+    """Delete a session from Redis"""
+    if session_id:
+        key = f"{SESSION_PREFIX}{session_id}"
+        redis_client.delete(key)
+        logger.info(f"Deleted session {session_id}")
+
+def get_session_id_from_request():
+    """Extract session ID from cookies"""
+    return request.cookies.get(SESSION_COOKIE_NAME)
+
+def set_session_cookie(response, session_id):
+    """Set session cookie on response"""
+    response.set_cookie(
+        SESSION_COOKIE_NAME, 
+        session_id,
+        httponly=True,
+        secure=True,
+        samesite='Lax',
+        max_age=SESSION_LIFETIME
+    )
+    return response
+
+def remove_session_cookie(response):
+    """Remove session cookie from response"""
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
+
+@app.before_request
+def load_user_session():
+    """Load user session before each request"""
+    g.session_id = get_session_id_from_request()
+    g.session = get_session(g.session_id) if g.session_id else None
+    g.user = None
+    g.token_info = None
+    
+    if g.session and 'token_info' in g.session:
+        token_info = g.session['token_info']
         
-        # Verify token matches current user
-        if g.token_info and 'access_token' in g.token_info:
+        # Check if token is expired and needs refresh
+        auth_manager = SpotifyOAuth(
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            redirect_uri=REDIRECT_URI,
+            scope=SCOPE,
+            cache_path=None,
+        )
+        
+        if auth_manager.is_token_expired(token_info):
             try:
-                sp = spotipy.Spotify(auth=g.token_info['access_token'])
-                current_user = sp.current_user()
-                
-                if current_user['id'] != session.get('user_id'):
-                    logger.warning(f"Session user mismatch! Session: {session.get('user_id')}, Token: {current_user['id']}")
-                    clear_session()
-                    g.token_info = None
-                else:
-                    logger.debug(f"User verified: {current_user['id']}")
+                logger.info(f"Refreshing token for user {g.session.get('user_id')}")
+                token_info = auth_manager.refresh_access_token(token_info['refresh_token'])
+                g.session['token_info'] = token_info
+                save_session(g.session_id, g.session)
             except Exception as e:
-                logger.error(f"Token verification error: {e}")
-                clear_session()
+                logger.error(f"Failed to refresh token: {e}")
+                # Don't set token_info if refresh failed
+                return
+        
+        # Set token info and verify user
+        g.token_info = token_info
+        
+        try:
+            sp = spotipy.Spotify(auth=token_info['access_token'])
+            user = sp.current_user()
+            
+            # Verify user matches the session user
+            if not g.session.get('user_id') or user['id'] == g.session.get('user_id'):
+                g.user = user
+                # Update user info if needed
+                if g.session.get('user_id') != user['id']:
+                    g.session['user_id'] = user['id']
+                    g.session['user_name'] = user.get('display_name', user['id'])
+                    save_session(g.session_id, g.session)
+            else:
+                # User mismatch, something is wrong
+                logger.warning(f"User mismatch! Session: {g.session.get('user_id')}, API: {user['id']}")
+                delete_session(g.session_id)
+                g.session = None
                 g.token_info = None
-    except Exception as e:
-        logger.error(f"Error in before_request: {e}")
-        g.token_info = None
+        except Exception as e:
+            logger.error(f"Error verifying user: {e}")
+            g.token_info = None
 
 
 def get_handler():
-    if g.get('token_info'):
+    """Get a SpotifyHandler instance if user is authenticated"""
+    if g.token_info:
         return SpotifyHandler(token_info=g.token_info)
     return None
 
 
 @app.route('/')
 def index():
-    # Force clear session when hitting the index page
-    clear_session()
-    # Create a new session with a unique ID
-    session['_id'] = generate_session_id()
-    session.modified = True
+    """Home page - always start with a fresh session"""
+    # Delete any existing session
+    if g.session_id:
+        delete_session(g.session_id)
     
-    logger.info(f"New session created: {session.get('_id')}")
-    return render_template('index.html')
+    # Create a new response with a fresh session
+    response = make_response(render_template('index.html'))
+    
+    # Create new session and set cookie
+    new_session_id = create_session()
+    set_session_cookie(response, new_session_id)
+    
+    logger.info(f"Created new session: {new_session_id}")
+    return response
 
 
 @app.route('/login_url')
 def login_url():
-    # Ensure we have a clean session
-    clear_session()
+    """Generate Spotify OAuth URL"""
+    # Ensure we have a valid session
+    if not g.session:
+        # Create a new session if none exists
+        session_id = create_session()
+        g.session = get_session(session_id)
+        g.session_id = session_id
+    else:
+        # Update state in existing session
+        g.session['state'] = str(uuid.uuid4())
+        save_session(g.session_id, g.session)
     
-    # Create new session with unique identifiers
-    session['_id'] = generate_session_id()
-    state = str(uuid.uuid4())
-    session['state'] = state
-    session['login_time'] = int(time.time())
-    session.modified = True
-    
-    logger.info(f"[LOGIN] New session ID: {session.get('_id')}")
-    logger.info(f"[LOGIN] Generated session state: {state}")
+    logger.info(f"[LOGIN] Using session: {g.session_id}")
+    logger.info(f"[LOGIN] Using state: {g.session['state']}")
     
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
         redirect_uri=REDIRECT_URI,
         scope=SCOPE,
-        state=state,
+        state=g.session['state'],
         show_dialog=True,  # Force Spotify to ask for permission again
         open_browser=False
     )
+    
     auth_url = auth_manager.get_authorize_url()
     logger.info(f"Auth URL generated: {auth_url[:50]}...")
     
-    response = jsonify({'url': auth_url})
+    # Create response with session cookie
+    response = make_response(jsonify({'url': auth_url}))
+    set_session_cookie(response, g.session_id)
+    
     return response
 
 
 @app.route('/callback')
 def callback():
+    """Handle Spotify OAuth callback"""
     code = request.args.get('code')
     state = request.args.get('state')
-
+    
     logger.info(f"[CALLBACK] Callback state: {state}")
-    logger.info(f"[CALLBACK] Session state: {session.get('state')}")
-    logger.info(f"[CALLBACK] Session ID: {session.get('_id')}")
-
-    if state != session.get('state'):
+    logger.info(f"[CALLBACK] Session ID: {g.session_id}")
+    
+    if not g.session:
+        logger.warning("No session found during callback")
+        return "Session error. Please try again.", 400
+    
+    logger.info(f"[CALLBACK] Session state: {g.session.get('state')}")
+    
+    if state != g.session.get('state'):
         logger.warning("⚠️ State mismatch detected!")
-        clear_session()
+        delete_session(g.session_id)
         return "State mismatch. Authentication failed. Please try again.", 403
-
+    
     auth_manager = SpotifyOAuth(
         client_id=CLIENT_ID,
         client_secret=CLIENT_SECRET,
@@ -203,110 +258,108 @@ def callback():
         scope=SCOPE,
         cache_path=None,
     )
-
+    
     try:
         token_info = auth_manager.get_access_token(code, as_dict=True)
         sp = spotipy.Spotify(auth=token_info['access_token'])
         user_info = sp.current_user()
         user_id = user_info['id']
-
-        # Keep the session ID but clear other data
-        session_id = session.get('_id')
-        clear_session()
         
-        # Set fresh session data
-        session['_id'] = session_id
-        session['token_info'] = token_info
-        session['user_id'] = user_id
-        session['user_name'] = user_info.get('display_name', user_id)
-        session['login_time'] = int(time.time())
-        session.modified = True
+        # Update session with new user data
+        g.session['token_info'] = token_info
+        g.session['user_id'] = user_id
+        g.session['user_name'] = user_info.get('display_name', user_id)
+        g.session['login_time'] = int(time.time())
         
-        logger.info(f"User {user_id} successfully logged in with session {session_id}")
-
-        return redirect('/dashboard')
+        # Save updated session
+        save_session(g.session_id, g.session)
+        
+        logger.info(f"User {user_id} successfully logged in with session {g.session_id}")
+        
+        # Redirect to dashboard with session cookie
+        response = make_response(redirect('/dashboard'))
+        set_session_cookie(response, g.session_id)
+        return response
+        
     except Exception as e:
         logger.error(f"Callback error: {e}")
-        clear_session()
+        delete_session(g.session_id)
         return "Callback error. Please try again.", 500
 
 
 @app.route('/dashboard')
 def dashboard():
+    """Dashboard page - requires authentication"""
     handler = get_handler()
-    if not handler:
-        logger.warning("Attempt to access dashboard without valid handler")
+    if not handler or not g.user:
+        logger.warning("Attempt to access dashboard without valid authentication")
         return redirect('/')
-
+    
     try:
-        me = handler.sp.current_user()
-        if me['id'] != session.get('user_id'):
-            logger.warning(f"User ID mismatch: {me['id']} vs {session.get('user_id')}")
-            clear_session()
-            return redirect('/')
-
-        # Log complete session data for debugging
-        logger.info(f"Dashboard access - Session ID: {session.get('_id')}, User: {session.get('user_id')}")
+        logger.info(f"Dashboard access - Session ID: {g.session_id}, User: {g.session.get('user_id')}")
         
         playlists = handler.get_playlists()
-        logger.info(f"Retrieved {len(playlists)} playlists for user {me['id']}")
-        return render_template("dashboard.html", playlists=playlists)
+        logger.info(f"Retrieved {len(playlists)} playlists for user {g.user['id']}")
+        
+        response = make_response(render_template("dashboard.html", playlists=playlists))
+        set_session_cookie(response, g.session_id)  # Refresh session cookie
+        return response
+        
     except Exception as e:
         logger.error(f"Dashboard error: {e}")
-        clear_session()
         return redirect('/')
 
 
 @app.route('/user_info')
 def user_info():
-    handler = get_handler()
-    if not handler:
+    """Get current user information"""
+    if not g.user:
         return jsonify({'logged_in': False})
-    try:
-        user = handler.sp.current_user()
-        if user['id'] != session.get('user_id'):
-            logger.warning(f"User ID mismatch in user_info: {user['id']} vs {session.get('user_id')}")
-            clear_session()
-            return jsonify({'logged_in': False})
-            
-        return jsonify({
-            'logged_in': True, 
-            'username': user.get('display_name', user.get('id')),
-            'user_id': user.get('id'),
-            'session_id': session.get('_id')
-        })
-    except Exception as e:
-        logger.error(f"Error getting user info: {e}")
-        clear_session()
-        return jsonify({'logged_in': False})
+    
+    return jsonify({
+        'logged_in': True,
+        'username': g.user.get('display_name', g.user.get('id')),
+        'user_id': g.user.get('id'),
+        'session_id': g.session_id
+    })
 
 
 @app.route('/select_playlist', methods=['POST'])
 def select_playlist():
+    """Select a playlist to download from"""
     handler = get_handler()
     if not handler:
         return jsonify({'error': 'Not logged in'}), 401
-
+    
     data = request.get_json()
     playlist_name = data.get('playlist')
     handler.select_playlist(playlist_name)
     tracks = handler.get_track_list()
+    
+    # Remember selected playlist in session
+    g.session['selected_playlist'] = playlist_name
+    save_session(g.session_id, g.session)
+    
     return jsonify({'tracks': tracks})
 
 
 @app.route('/download', methods=['POST'])
 def download():
+    """Download selected tracks"""
     handler = get_handler()
     if not handler:
         return jsonify({'error': 'Not logged in'}), 401
-
+    
     data = request.get_json()
     selected_urls = data.get('tracks', [])
-
+    
     try:
         zip_path, results = handler.download_selected_tracks(selected_urls)
-        session['download_path'] = zip_path
-        session.modified = True
+        
+        # Store download path in session
+        g.session['download_path'] = zip_path
+        save_session(g.session_id, g.session)
+        
         return jsonify({'results': results, 'download_ready': True})
     except Exception as e:
         logger.error(f"Download failed: {e}")
@@ -315,69 +368,72 @@ def download():
 
 @app.route('/get_download')
 def get_download():
-    path = session.get('download_path')
+    """Serve download file"""
+    if not g.session:
+        return "Session expired", 401
+        
+    path = g.session.get('download_path')
     if not path or not os.path.exists(path):
         return "File tidak ditemukan.", 404
+        
     return send_file(path, as_attachment=True, download_name='spoticheat_download.zip')
 
 
 @app.route('/is_logged_in')
 def is_logged_in():
-    handler = get_handler()
-    if not handler:
+    """Check if user is logged in"""
+    if not g.user:
         return jsonify({'logged_in': False})
-    try:
-        user = handler.sp.current_user()
-        # Verify user ID matches session
-        if user['id'] != session.get('user_id'):
-            logger.warning(f"User ID mismatch in is_logged_in: {user['id']} vs {session.get('user_id')}")
-            clear_session()
-            return jsonify({'logged_in': False})
-        return jsonify({'logged_in': True, 'user': user['display_name']})
-    except Exception as e:
-        logger.error(f"Error in is_logged_in: {e}")
-        clear_session()
-        return jsonify({'logged_in': False})
+        
+    return jsonify({'logged_in': True, 'user': g.user.get('display_name')})
 
 
 @app.route('/logout')
 def logout():
-    # Get user ID for logging
-    user_id = session.get('user_id')
-    logger.info(f"Logging out user: {user_id} with session {session.get('_id')}")
+    """Log out user"""
+    if g.session_id:
+        user_id = g.session.get('user_id')
+        logger.info(f"Logging out user: {user_id} with session {g.session_id}")
+        delete_session(g.session_id)
     
-    # Clear all session data
-    clear_session()
-    
-    # Create response with redirect
-    return redirect('/')
+    # Redirect to home and remove cookie
+    response = make_response(redirect('/'))
+    remove_session_cookie(response)
+    return response
 
 
 @app.route('/post_logout')
 def post_logout():
-    # Ensure session is cleared here too
-    clear_session()
-    return render_template('post_logout.html')
+    """Page shown after Spotify logout"""
+    # Ensure session is cleared
+    if g.session_id:
+        delete_session(g.session_id)
+    
+    response = make_response(render_template('post_logout.html'))
+    remove_session_cookie(response)
+    return response
 
 
 @app.route('/force_logout_spotify')
 def force_logout_spotify():
-    clear_session()
+    """Force logout from Spotify"""
+    if g.session_id:
+        delete_session(g.session_id)
     
-    # Mengarahkan ke halaman logout Spotify kemudian kembali ke post_logout
-    return redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout")
+    response = make_response(redirect("https://accounts.spotify.com/logout?continue=https://web-production-8746d.up.railway.app/post_logout"))
+    remove_session_cookie(response)
+    return response
 
 
 @app.route('/debug_session')
 def debug_session():
-    """Debugging endpoint for session inspection - remove in production"""
-    if app.config.get('DEBUG', False):
-        session_data = {k: str(v) for k, v in session.items()}
-        return jsonify({
-            'session': session_data,
-            'sid': session.sid if hasattr(session, 'sid') else None
-        })
-    return "Not available in production", 403
+    """Debug endpoint for session inspection"""
+    return jsonify({
+        'session_id': g.session_id,
+        'session_data': g.session,
+        'has_user': g.user is not None,
+        'user_id': g.user['id'] if g.user else None
+    })
 
 
 if __name__ == '__main__':
